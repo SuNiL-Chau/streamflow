@@ -12,8 +12,8 @@ describe('Adapters', () => {
         const webStream = toWeb(readable);
         assert.ok(webStream instanceof ReadableStream, 'should be Web Stream');
 
-        const backToBetter = fromWeb(webStream);
-        const result = await text(backToBetter);
+        const backToStreamflow = fromWeb(webStream);
+        const result = await text(backToStreamflow);
 
         assert.strictEqual(result, 'hello web streams');
     });

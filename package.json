@@ -1,5 +1,5 @@
 {
-  "name": "better-streams",
+  "name": "streamflow",
   "version": "0.1.0",
   "description": "A cross-runtime JavaScript streaming library designed to replace or augment Web Streams and Node.js Streams with a more ergonomic, performant, and async-iterable-first design.",
   "main": "dist/index.cjs.js",

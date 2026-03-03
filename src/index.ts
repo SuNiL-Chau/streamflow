@@ -12,9 +12,9 @@ export { fromNode, toNode } from './adapters/node.js';
   Instead of default exporting an object, we follow standard ESM library design.
   Consumers can use:
   
-  import * as Stream from 'better-streams';
+  import * as Stream from 'streamflow';
   
   Or:
   
-  import { push, pull } from 'better-streams';
+  import { push, pull } from 'streamflow';
 */

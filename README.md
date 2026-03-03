@@ -7,23 +7,23 @@ Source of idiation - [Cloudflare Blog Better Stream API](https://blog.cloudflare
 ## Motivation
 Web Streams (`ReadableStream`, `WritableStream`) are heavy, microtask-intensive, and inherently promise-bound per chunk. Node.js Streams (`stream.Readable`) are bound to the Node ecosystem and can carry heavy legacy baggage and performance costs.
 
-**Better Streams** abstracts streams simply as `AsyncIterable<Uint8Array[]>`. Processing works in *batches*, natively eliminating microtask overhead per tiny byte chunk, making pipelines highly ergonomic and blazing fast.
+**Streamflow** abstracts streams simply as `AsyncIterable<Uint8Array[]>`. Processing works in *batches*, natively eliminating microtask overhead per tiny byte chunk, making pipelines highly ergonomic and blazing fast.
 
 ## Installation
 
 ```bash
-npm install better-streams
+npm install streamflow
 # or
-pnpm add better-streams
+pnpm add streamflow
 # or
-yarn add better-streams
+yarn add streamflow
 ```
 
 ## Quick Start
 Create a writer and an async iterable reader with backpressure handling out of the box:
 
 ```ts
-import { push, pull } from 'better-streams';
+import { push, pull } from 'streamflow';
 
 const { writer, readable } = push({
   highWaterMark: 1024,
@@ -48,7 +48,7 @@ for await (const batch of encoded) {
 ```
 
 ## Migration Guide (From Web Streams)
-| Web Streams | Better Streams |
+| Web Streams | Streamflow |
 | --- | --- |
 | `new ReadableStream({ start(c) { c.enqueue(v) } })` | `const { writer, readable } = push(); writer.write(v)` |
 | `stream.pipeThrough(new TransformStream(...))` | `pull(stream, (chunk) => [chunk])` |
@@ -74,9 +74,9 @@ Broadcasts a single stream's batches across multiple parallel pipelines cleanly 
 ### Integration Adapters
 Interoperability covers Node.js and Browser standard streams:
 *   `fromWeb(webStream)`
-*   `toWeb(betterStream)`
+*   `toWeb(streamflowStream)`
 *   `fromNode(nodeStream)`
-*   `toNode(betterStream)`
+*   `toNode(streamflowStream)`
 
 ### Utility Helpers
 Helper methods exist to aggregate the batch iterator naturally at pipeline conclusions:
@@ -88,11 +88,11 @@ Helper methods exist to aggregate the batch iterator naturally at pipeline concl
 
 ### HTTP Response Streaming (fetch)
 ```ts
-import { fromWeb, pull, text } from 'better-streams';
+import { fromWeb, pull, text } from 'streamflow';
 
 const res = await fetch('https://example.com/data.txt');
 
-// seamlessly pass the web stream body into better streams
+// seamlessly pass the web stream body into streamflow
 const bs = fromWeb(res.body!);
 
 const filtered = pull(bs, chunk => {
@@ -106,7 +106,7 @@ const content = await text(filtered);
 ### File I/O Streaming (Node)
 ```ts
 import { createReadStream, createWriteStream } from 'node:fs';
-import { fromNode, pull, toNode } from 'better-streams';
+import { fromNode, pull, toNode } from 'streamflow';
 
 const read = createReadStream('input.txt');
 const write = createWriteStream('output.txt');
@@ -125,7 +125,7 @@ toNode(upper).pipe(write);
 
 ### WebSocket Streaming
 ```ts
-import { push } from 'better-streams';
+import { push } from 'streamflow';
 
 // In browser WebSocket:
 const socket = new WebSocket('ws://example.com/stream');
@@ -144,7 +144,7 @@ for await (const batch of readable) {
 
 ### Custom Protocol Pipeline
 ```ts
-import { push, pull } from 'better-streams';
+import { push, pull } from 'streamflow';
 
 const { writer, readable } = push();
 
@@ -169,13 +169,13 @@ for await (const messageBatch of decodedProtocolStream) {
 
 ## Performance Benchmark
 
-In our throughput benchmarks comparing Better Streams to native Web Streams via Node.js identity transforms:
+In our throughput benchmarks comparing Streamflow to native Web Streams via Node.js identity transforms:
 
-| Payload | Better Streams | Web Streams | Improvement |
+| Payload | Streamflow | Web Streams | Improvement |
 | --- | --- | --- | --- |
 | 1MB | ~2.5ms | ~7.5ms | **~3x Faster** |
 | 100MB | ~50ms | ~480ms | **~9x Faster** |
 | 1000MB (1GB) | ~350ms | ~4,200ms | **~12x Faster** |
 | 10000MB (10GB) | ~2,370ms | *Out of Memory / Very Slow* | **Orders of Magnitude** |
 
-*(Results demonstrate staggering improvements under heavy loads. Because Better Streams yields underlying batches of raw `Uint8Array[]` natively, it avoids instantiating millions of Promise chains for individual chunk locks, making gigabyte-scale throughput lightning-fast and memory-stable).*
+*(Results demonstrate staggering improvements under heavy loads. Because Streamflow yields underlying batches of raw `Uint8Array[]` natively, it avoids instantiating millions of Promise chains for individual chunk locks, making gigabyte-scale throughput lightning-fast and memory-stable).*

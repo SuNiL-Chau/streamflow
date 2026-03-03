@@ -10,7 +10,7 @@ async function runTest(payloadMb) {
     const chunk = new Uint8Array(CHUNK_SIZE);
     chunk.fill(1); // fill with dummy data
 
-    // 1. Better Streams Test
+    // 1. Streamflow Test
     const bsStart = performance.now();
     const { writer, readable } = push({ highWaterMark: TOTAL_CHUNKS * 2 });
 
@@ -31,7 +31,7 @@ async function runTest(payloadMb) {
     await producer;
     const bsEnd = performance.now();
 
-    console.log(`Better Streams: ${bsChunks} chunks read in ${(bsEnd - bsStart).toFixed(2)}ms`);
+    console.log(`Streamflow: ${bsChunks} chunks read in ${(bsEnd - bsStart).toFixed(2)}ms`);
 
     // 2. Web Streams Comparison
     const wsStart = performance.now();
@@ -68,11 +68,11 @@ async function runTest(payloadMb) {
     console.log(`Web Streams:    ${wsChunks} chunks read in ${(wsEnd - wsStart).toFixed(2)}ms`);
 
     const diff = ((wsEnd - wsStart) / (bsEnd - bsStart)).toFixed(2);
-    console.log(`Result: Better Streams is ~${diff}x faster than Web Streams for this payload.`);
+    console.log(`Result: Streamflow is ~${diff}x faster than Web Streams for this payload.`);
 }
 
 async function runBenchmark() {
-    console.log('--- Better Streams Benchmark ---');
+    console.log('--- Streamflow Benchmark ---');
     await runTest(1); // 1MB Test
     await runTest(100); // 100MB Test
     await runTest(1000); // 1000MB Test (1GB)
