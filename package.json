@@ -2,31 +2,51 @@
   "name": "streamflow",
   "version": "0.1.0",
   "description": "A cross-runtime JavaScript streaming library designed to replace or augment Web Streams and Node.js Streams with a more ergonomic, performant, and async-iterable-first design.",
+  "type": "module",
   "main": "dist/index.cjs.js",
   "module": "dist/index.esm.js",
   "types": "dist/index.d.ts",
+  "sideEffects": false,
   "exports": {
     ".": {
-      "import": {
-        "types": "./dist/index.d.ts",
-        "default": "./dist/index.esm.js"
-      },
-      "require": {
-        "types": "./dist/index.d.ts",
-        "default": "./dist/index.cjs.js"
-      }
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.esm.js",
+      "require": "./dist/index.cjs.js"
     }
   },
   "files": ["dist"],
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SuNiL-Chau/streamflow.git"
+  },
+  "homepage": "https://github.com/SuNiL-Chau/streamflow",
+  "bugs": {
+    "url": "https://github.com/SuNiL-Chau/streamflow/issues"
+  },
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/SuNiL-Chau"
+  },
   "scripts": {
     "build": "node node_modules/tsup/dist/cli-default.js",
     "dev": "node node_modules/tsup/dist/cli-default.js --watch",
     "test": "node --experimental-strip-types --test test/**/*.test.ts",
     "lint": "node node_modules/@biomejs/biome/bin/biome check .",
-    "format": "node node_modules/@biomejs/biome/bin/biome format --write ."
+    "format": "node node_modules/@biomejs/biome/bin/biome format --write .",
+    "prepublishOnly": "npm run build"
   },
-  "keywords": ["streams", "async-iterable", "streaming", "performance"],
-  "author": "",
+  "keywords": [
+    "streams",
+    "async-iterable",
+    "streaming",
+    "performance",
+    "backpressure",
+    "cross-runtime"
+  ],
+  "author": "Sunil Chaudhary (https://github.com/SuNiL-Chau)",
   "license": "MIT",
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
