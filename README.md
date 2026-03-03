@@ -1,181 +1,536 @@
 # Streamflow
 
-A cross-runtime JavaScript streaming library designed to replace or augment the Web Streams and Node.js Streams APIs with strictly async-iterable-first semantics.
+> A cross-runtime JavaScript streaming engine — ergonomic, performant, and `AsyncIterable`-first.
 
-Source of idiation - [Cloudflare Blog Better Stream API](https://blog.cloudflare.com/a-better-web-streams-api/)
+Streamflow is an enterprise-grade streaming library for Node.js, Browsers, Deno, and Cloudflare Workers. It replaces the complexity of WHATWG `ReadableStream` and Node.js streams with a simple, unified `AsyncIterable<Uint8Array[]>` interface, backed by an O(1) linked-list queue for deterministic memory and throughput.
 
-## Motivation
-Web Streams (`ReadableStream`, `WritableStream`) are heavy, microtask-intensive, and inherently promise-bound per chunk. Node.js Streams (`stream.Readable`) are bound to the Node ecosystem and can carry heavy legacy baggage and performance costs.
+**Source of idiation - [Cloudflare Blog Better Stream API](https://blog.cloudflare.com/a-better-web-streams-api/)**
 
-**Streamflow** abstracts streams simply as `AsyncIterable<Uint8Array[]>`. Processing works in *batches*, natively eliminating microtask overhead per tiny byte chunk, making pipelines highly ergonomic and blazing fast.
+## Benchmarks
+
+Benchmarked against the native Web Streams API on 1KB chunks:
+
+| Payload  | Streamflow  | Web Streams  | Speedup    |
+|----------|-------------|--------------|------------|
+| 1 MB     | 2.21ms      | 13.20ms      | **~5.98x** |
+| 100 MB   | 49.65ms     | 264.48ms     | **~5.33x** |
+| 1 GB     | 301.59ms    | 2224.99ms    | **~7.38x** |
+| 10 GB    | 3078.13ms   | 26218.64ms   | **~8.52x** |
+
+---
 
 ## Installation
 
 ```bash
 npm install streamflow
-# or
-pnpm add streamflow
-# or
-yarn add streamflow
 ```
+
+---
 
 ## Quick Start
-Create a writer and an async iterable reader with backpressure handling out of the box:
 
 ```ts
-import { push, pull } from 'streamflow';
+import { push, text } from 'streamflow';
 
-const { writer, readable } = push({
-  highWaterMark: 1024,
-  backpressure: 'strict' // or 'block', 'drop-oldest', 'drop-newest'
-});
+const { writer, readable } = push();
 
-// Write data
-writer.write('hello');
-writer.write(' world');
+writer.write('Hello, ');
+writer.write('Streamflow!');
 writer.end();
 
-// Transform
-const encoded = pull(readable, (chunk) => {
-  const str = new TextDecoder().decode(chunk);
-  return [new TextEncoder().encode(str.toUpperCase())];
-});
-
-// Read it out directly using async iterators!
-for await (const batch of encoded) {
-  console.log(batch);
-}
+console.log(await text(readable)); // "Hello, Streamflow!"
 ```
 
-## Migration Guide (From Web Streams)
-| Web Streams | Streamflow |
-| --- | --- |
-| `new ReadableStream({ start(c) { c.enqueue(v) } })` | `const { writer, readable } = push(); writer.write(v)` |
-| `stream.pipeThrough(new TransformStream(...))` | `pull(stream, (chunk) => [chunk])` |
-| `const reader = stream.getReader(); await reader.read()` | `for await (const batch of readable) {}` |
+---
 
-## API Reference
+## Core API
 
-### `push(options?: PushOptions)`
-Creates an uncoupled `writer` and `readable` stream batch pair.
-*   **options.highWaterMark**: Batch upper limit trigger for the applied strategy.
-*   **options.backpressure**:
-    *   `'strict'`: Throws `StreamBackpressureError` when buffer exceeds HWM.
-    *   `'block'`: Resolves `write()` promises only after consumer drains the queue.
-    *   `'drop-oldest'`: Discards the oldest chunks buffered.
-    *   `'drop-newest'`: Discards newly incoming `write()` chunks buffer is full.
+### `push(options?)`
 
-### `pull(source, ...transforms)`
-Applies transformations iteratively as pipelines over chunks. Streams return empty arrays `[]` to drop chunks or multiple arrays `[a, b]` to split chunks.
+Creates a writable/readable stream pair. The `writer` side accepts data; the `readable` side is an `AsyncIterable<Uint8Array[]>`.
 
-### `share(source, options)`
-Broadcasts a single stream's batches across multiple parallel pipelines cleanly without cloning semantics penalties.
-
-### Integration Adapters
-Interoperability covers Node.js and Browser standard streams:
-*   `fromWeb(webStream)`
-*   `toWeb(streamflowStream)`
-*   `fromNode(nodeStream)`
-*   `toNode(streamflowStream)`
-
-### Utility Helpers
-Helper methods exist to aggregate the batch iterator naturally at pipeline conclusions:
-*   `Stream.text(stream)`: Returns string representations.
-*   `Stream.bytes(stream)`: Flattens to a single Uint8Array.
-*   `Stream.json(stream)`: Parses raw strings.
-
-## Examples
-
-### HTTP Response Streaming (fetch)
-```ts
-import { fromWeb, pull, text } from 'streamflow';
-
-const res = await fetch('https://example.com/data.txt');
-
-// seamlessly pass the web stream body into streamflow
-const bs = fromWeb(res.body!);
-
-const filtered = pull(bs, chunk => {
-  // your custom chunk parsing...
-  return [chunk];
-});
-
-const content = await text(filtered);
-```
-
-### File I/O Streaming (Node)
-```ts
-import { createReadStream, createWriteStream } from 'node:fs';
-import { fromNode, pull, toNode } from 'streamflow';
-
-const read = createReadStream('input.txt');
-const write = createWriteStream('output.txt');
-
-const stream = fromNode(read);
-
-// Uppercase transform
-const upper = pull(stream, chunk => {
-  const t = new TextDecoder().decode(chunk).toUpperCase();
-  return [new TextEncoder().encode(t)];
-});
-
-// output straight into the write stream
-toNode(upper).pipe(write);
-```
-
-### WebSocket Streaming
 ```ts
 import { push } from 'streamflow';
 
-// In browser WebSocket:
-const socket = new WebSocket('ws://example.com/stream');
-const { writer, readable } = push();
-
-socket.addEventListener('message', async (event) => {
-  const bytes = new Uint8Array(await event.data.arrayBuffer());
-  await writer.write(bytes);
+const { writer, readable } = push({
+  highWaterMark: 1024, // max buffered chunks (default: 16384)
+  backpressure: 'strict', // see Backpressure section
 });
-socket.addEventListener('close', () => writer.end());
 
+// Write data
+await writer.write('chunk one');
+await writer.write(new Uint8Array([1, 2, 3]));
+
+// Batch write
+await writer.writev([new Uint8Array([4, 5]), new Uint8Array([6, 7])]);
+
+// Signal end
+writer.end();
+
+// Consume
 for await (const batch of readable) {
-  // Process WebSocket binary chunks securely decoupled from the socket events
+  for (const chunk of batch) {
+    console.log(chunk); // Uint8Array
+  }
 }
 ```
 
-### Custom Protocol Pipeline
+#### Backpressure Strategies
+
+| Strategy      | Behaviour when buffer is full                        |
+|---------------|------------------------------------------------------|
+| `strict`      | Throws `StreamBackpressureError` immediately         |
+| `block`       | Awaits until the consumer drains the buffer          |
+| `drop-oldest` | Silently drops the oldest buffered chunk             |
+| `drop-newest` | Silently discards the incoming (newest) chunk        |
+
 ```ts
-import { push, pull } from 'streamflow';
+// Strict (default) — throws on overflow
+const { writer } = push({ highWaterMark: 2, backpressure: 'strict' });
+
+// Block — writer waits until consumer reads
+const { writer } = push({ highWaterMark: 2, backpressure: 'block' });
+
+// Drop-oldest — keeps latest data
+const { writer } = push({ highWaterMark: 2, backpressure: 'drop-oldest' });
+
+// Drop-newest — keeps first data, discards overflow
+const { writer } = push({ highWaterMark: 2, backpressure: 'drop-newest' });
+```
+
+#### Aborting a Stream
+
+```ts
+import { push } from 'streamflow';
 
 const { writer, readable } = push();
 
-// Example protocol: [1 byte Type] [4 bytes Length] [Payload...]
-const decodedProtocolStream = pull(readable, (chunk) => {
-  // Buffer and match your custom custom packet boundaries here,
-  // yielding only correctly parsed protocol payloads:
-  const type = chunk[0];
-  const length = new DataView(chunk.buffer).getUint32(1, false);
-  const payload = chunk.subarray(5, 5 + length);
-  
-  // If we only buffered a partial packet, we'd return [] here
-  // and wait for the rest of the message in the next chunk cycle.
-  
-  return [payload];
-});
+writer.write('some data');
+writer.abort(new Error('Connection lost'));
 
-for await (const messageBatch of decodedProtocolStream) {
-  // Handled fully formed protocol packets!
+try {
+  for await (const batch of readable) { /* ... */ }
+} catch (err) {
+  console.error(err.message); // "Connection lost"
 }
 ```
 
-## Performance Benchmark
+---
 
-In our throughput benchmarks comparing Streamflow to native Web Streams via Node.js identity transforms:
+### `pull(source, ...transforms)`
 
-| Payload | Streamflow | Web Streams | Improvement |
-| --- | --- | --- | --- |
-| 1MB | ~2.5ms | ~7.5ms | **~3x Faster** |
-| 100MB | ~50ms | ~480ms | **~9x Faster** |
-| 1000MB (1GB) | ~350ms | ~4,200ms | **~12x Faster** |
-| 10000MB (10GB) | ~2,370ms | *Out of Memory / Very Slow* | **Orders of Magnitude** |
+Applies one or more async transform functions to a stream. Each transform receives a `Uint8Array` chunk and returns a `Uint8Array[]` (one chunk can become zero, one, or many output chunks).
 
-*(Results demonstrate staggering improvements under heavy loads. Because Streamflow yields underlying batches of raw `Uint8Array[]` natively, it avoids instantiating millions of Promise chains for individual chunk locks, making gigabyte-scale throughput lightning-fast and memory-stable).*
+```ts
+import { push, pull, text } from 'streamflow';
+
+const { writer, readable } = push();
+
+writer.write('hello world');
+writer.end();
+
+// Uppercase transform
+const uppercased = pull(readable, (chunk) => {
+  const str = new TextDecoder().decode(chunk).toUpperCase();
+  return [new TextEncoder().encode(str)];
+});
+
+console.log(await text(uppercased)); // "HELLO WORLD"
+```
+
+#### Chaining Multiple Transforms
+
+```ts
+import { push, pull, text } from 'streamflow';
+
+const { writer, readable } = push();
+writer.write('  hello world  ');
+writer.end();
+
+const processed = pull(
+  readable,
+  // Trim
+  (chunk) => [new TextEncoder().encode(new TextDecoder().decode(chunk).trim())],
+  // Reverse
+  (chunk) => [new TextEncoder().encode(new TextDecoder().decode(chunk).split('').reverse().join(''))],
+);
+
+console.log(await text(processed)); // "dlrow olleh"
+```
+
+#### Filtering (dropping chunks)
+
+A transform can return `[]` to drop a chunk entirely:
+
+```ts
+import { push, pull, text } from 'streamflow';
+
+const { writer, readable } = push();
+writer.write('keep this');
+writer.write('skip this');
+writer.end();
+
+let i = 0;
+const filtered = pull(readable, (chunk) => {
+  return i++ % 2 === 0 ? [chunk] : []; // keep even-indexed chunks
+});
+
+console.log(await text(filtered)); // "keep this"
+```
+
+---
+
+### `pullSync(source, ...transforms)`
+
+A fully synchronous version of `pull` for use with synchronous in-memory data sources. Avoids promise/microtask overhead entirely.
+
+```ts
+import { pullSync } from 'streamflow';
+
+function* generateChunks() {
+  yield [new TextEncoder().encode('chunk1')];
+  yield [new TextEncoder().encode('chunk2')];
+}
+
+const result = pullSync(
+  generateChunks(),
+  (chunk) => [new TextEncoder().encode(new TextDecoder().decode(chunk).toUpperCase())],
+);
+
+for (const batch of result) {
+  for (const chunk of batch) {
+    console.log(new TextDecoder().decode(chunk)); // "CHUNK1", "CHUNK2"
+  }
+}
+```
+
+---
+
+### `share(source, options?)`
+
+Broadcasts a single source stream to **multiple independent consumers**. Each consumer gets its own backpressure-controlled queue.
+
+```ts
+import { push, share, text } from 'streamflow';
+
+const { writer, readable } = push();
+
+writer.write('shared data');
+writer.end();
+
+const shared = share(readable);
+
+// Two independent consumers
+const [consumer1, consumer2] = [
+  shared.pull(), // consumer with no transforms
+  shared.pull((chunk) => [chunk]), // consumer with identity transform
+];
+
+const [result1, result2] = await Promise.all([text(consumer1), text(consumer2)]);
+
+console.log(result1); // "shared data"
+console.log(result2); // "shared data"
+```
+
+#### Multi-consumer with Different Transforms
+
+```ts
+import { push, share, text } from 'streamflow';
+
+const { writer, readable } = push();
+writer.write('hello');
+writer.end();
+
+const shared = share(readable);
+
+const upper = shared.pull((c) => [new TextEncoder().encode(new TextDecoder().decode(c).toUpperCase())]);
+const lower = shared.pull((c) => [new TextEncoder().encode(new TextDecoder().decode(c).toLowerCase())]);
+
+console.log(await text(upper)); // "HELLO"
+console.log(await text(lower)); // "hello"
+```
+
+---
+
+## Helper Functions
+
+### `text(source)`
+
+Collects all chunks from a stream and decodes them as a UTF-8 string.
+
+```ts
+import { push, text } from 'streamflow';
+
+const { writer, readable } = push();
+writer.write('Hello ');
+writer.write('World');
+writer.end();
+
+console.log(await text(readable)); // "Hello World"
+```
+
+### `bytes(source)`
+
+Collects all chunks and returns a single concatenated `Uint8Array`.
+
+```ts
+import { push, bytes } from 'streamflow';
+
+const { writer, readable } = push();
+writer.write(new Uint8Array([1, 2, 3]));
+writer.write(new Uint8Array([4, 5, 6]));
+writer.end();
+
+const result = await bytes(readable);
+console.log(result); // Uint8Array [1, 2, 3, 4, 5, 6]
+```
+
+### `json<T>(source)`
+
+Collects all chunks, decodes as UTF-8, and parses as JSON.
+
+```ts
+import { push, json } from 'streamflow';
+
+const { writer, readable } = push();
+writer.write('{"name":"Streamflow","fast":true}');
+writer.end();
+
+const data = await json<{ name: string; fast: boolean }>(readable);
+console.log(data.name); // "Streamflow"
+console.log(data.fast); // true
+```
+
+---
+
+## Adapters
+
+### Web Streams → Streamflow: `fromWeb(webStream)`
+
+Convert a WHATWG `ReadableStream` into a Streamflow `ReadableBatchStream`.
+
+```ts
+import { fromWeb, text } from 'streamflow';
+
+const response = await fetch('https://example.com/data.txt');
+const stream = fromWeb(response.body!);
+
+console.log(await text(stream));
+```
+
+### Streamflow → Web Streams: `toWeb(source)`
+
+Convert a Streamflow stream back to a WHATWG `ReadableStream` (e.g. to pass to `new Response()`).
+
+```ts
+import { push, toWeb } from 'streamflow';
+
+const { writer, readable } = push();
+writer.write('hello from streamflow');
+writer.end();
+
+const webStream = toWeb(readable);
+const response = new Response(webStream);
+console.log(await response.text()); // "hello from streamflow"
+```
+
+### Node.js Readable → Streamflow: `fromNode(nodeStream)`
+
+Convert a Node.js `Readable` stream into a Streamflow stream.
+
+```ts
+import { createReadStream } from 'node:fs';
+import { fromNode, text } from 'streamflow';
+
+const nodeStream = createReadStream('./README.md');
+const stream = fromNode(nodeStream);
+
+console.log(await text(stream));
+```
+
+### Streamflow → Node.js Readable: `toNode(source)`
+
+Convert a Streamflow stream back to a Node.js `Readable`.
+
+```ts
+import { createWriteStream } from 'node:fs';
+import { push, toNode } from 'streamflow';
+
+const { writer, readable } = push();
+writer.write('writing to file via node stream');
+writer.end();
+
+const nodeReadable = toNode(readable);
+nodeReadable.pipe(createWriteStream('./output.txt'));
+```
+
+---
+
+## Plugin API
+
+### `use(plugin, options?)`
+
+The enterprise-grade plugin system lets you extend Streamflow's capabilities by registering plugins that wrap or augment the core `push`, `pull`, and `share` operations.
+
+**Defining a plugin:**
+
+```ts
+import { use, type StreamPlugin } from 'streamflow';
+
+// A plugin that logs each time push() is called
+const loggerPlugin: StreamPlugin<{ prefix: string }, { push: typeof import('streamflow').push }> = {
+  name: 'logger',
+  version: '1.0.0',
+  apply(ctx, options) {
+    const prefix = options?.prefix ?? '[LOG]';
+    return {
+      push(opts) {
+        console.log(`${prefix} Stream created`);
+        return ctx.push(opts);
+      },
+    };
+  },
+};
+
+const { push: loggedPush } = use(loggerPlugin, { prefix: '[MyApp]' });
+
+const { writer, readable } = loggedPush(); // logs: "[MyApp] Stream created"
+writer.write('hi');
+writer.end();
+```
+
+**Building a metrics plugin:**
+
+```ts
+import { use, text, type StreamPlugin } from 'streamflow';
+
+interface MetricsResult {
+  push: typeof import('streamflow').push;
+  getMetrics: () => { streams: number };
+}
+
+const metricsPlugin: StreamPlugin<void, MetricsResult> = {
+  name: 'metrics',
+  version: '1.0.0',
+  apply(ctx) {
+    let streams = 0;
+    return {
+      push(opts) {
+        streams++;
+        return ctx.push(opts);
+      },
+      getMetrics: () => ({ streams }),
+    };
+  },
+};
+
+const { push: trackedPush, getMetrics } = use(metricsPlugin);
+
+const { writer, readable } = trackedPush();
+writer.write('data');
+writer.end();
+await text(readable);
+
+console.log(getMetrics()); // { streams: 1 }
+```
+
+---
+
+## Error Handling
+
+Streamflow exports named error classes so you can handle failures precisely.
+
+```ts
+import { push, StreamBackpressureError, StreamAbortError } from 'streamflow';
+
+const { writer, readable } = push({ highWaterMark: 1, backpressure: 'strict' });
+
+try {
+  writer.write('first chunk');  // OK
+  writer.write('second chunk'); // throws StreamBackpressureError
+} catch (err) {
+  if (err instanceof StreamBackpressureError) {
+    console.log('Buffer is full!');
+  }
+}
+```
+
+| Error Class               | When it's thrown                                          |
+|---------------------------|-----------------------------------------------------------|
+| `StreamError`             | Base class for all Streamflow errors                      |
+| `StreamBackpressureError` | `strict` backpressure limit exceeded                      |
+| `StreamClosedError`       | Writing to a closed stream                                |
+| `StreamAbortError`        | Stream was aborted (default reason if none given)         |
+
+---
+
+## TypeScript
+
+Streamflow is written in TypeScript and ships full `.d.ts` types.
+
+```ts
+import type {
+  ReadableBatchStream,   // AsyncIterable<Uint8Array[]>
+  Writer,                // { write, writev, end, abort }
+  PushOptions,           // { highWaterMark?, backpressure? }
+  PushResult,            // { writer: Writer, readable: ReadableBatchStream }
+  BackpressureStrategy,  // 'strict' | 'block' | 'drop-oldest' | 'drop-newest'
+  StreamPlugin,          // Plugin interface
+  StreamContext,         // Context passed to plugins
+} from 'streamflow';
+```
+
+---
+
+## Full Pipeline Example
+
+```ts
+import { createReadStream } from 'node:fs';
+import { fromNode, pull, share, text, bytes } from 'streamflow';
+
+// 1. Source: Node.js file stream
+const fileStream = fromNode(createReadStream('./data.bin'));
+
+// 2. Share to multiple consumers
+const shared = share(fileStream);
+
+// 3. Consumer A: raw bytes
+const rawConsumer = shared.pull();
+
+// 4. Consumer B: uppercase text
+const textConsumer = shared.pull(
+  (chunk) => [new TextEncoder().encode(new TextDecoder().decode(chunk).toUpperCase())],
+);
+
+// 5. Consume in parallel
+const [rawData, upperText] = await Promise.all([
+  bytes(rawConsumer),
+  text(textConsumer),
+]);
+
+console.log('Raw size:', rawData.byteLength);
+console.log('Uppercased:', upperText);
+```
+
+---
+
+## Package Info
+
+| Field    | Value                  |
+|----------|------------------------|
+| License  | MIT                    |
+| ESM      | `dist/index.esm.js`    |
+| CJS      | `dist/index.cjs.js`    |
+| Types    | `dist/index.d.ts`      |
+| Runtime  | Node, Browser, Deno, Cloudflare Workers |
+
+---
+
+## Scripts
+
+```bash
+npm run build    # Build ESM + CJS + .d.ts
+npm run test     # Run all unit & integration tests
+npm run lint     # Check with Biome
+npm run format   # Auto-format with Biome
+```
