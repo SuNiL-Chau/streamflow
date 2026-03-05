@@ -47,7 +47,7 @@
     "cross-runtime"
   ],
   "author": "Sunil Chaudhary (https://github.com/SuNiL-Chau)",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
     "@types/node": "^20.17.6",

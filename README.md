@@ -522,7 +522,7 @@ console.log('Uppercased:', upperText);
 
 | Field    | Value                  |
 |----------|------------------------|
-| License  | MIT                    |
+| License  | Apache-2.0             |
 | ESM      | `dist/index.esm.js`    |
 | CJS      | `dist/index.cjs.js`    |
 | Types    | `dist/index.d.ts`      |
