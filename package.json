@@ -1,5 +1,5 @@
 {
-  "name": "stream-flow",
+  "name": "byteflow",
   "version": "0.1.0",
   "description": "A cross-runtime JavaScript streaming library designed to replace or augment Web Streams and Node.js Streams with a more ergonomic, performant, and async-iterable-first design.",
   "type": "module",
@@ -20,11 +20,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/SuNiL-Chau/stream-flow.git"
+    "url": "https://github.com/SuNiL-Chau/byteflow.git"
   },
-  "homepage": "https://github.com/SuNiL-Chau/stream-flow",
+  "homepage": "https://github.com/SuNiL-Chau/byteflow",
   "bugs": {
-    "url": "https://github.com/SuNiL-Chau/stream-flow/issues"
+    "url": "https://github.com/SuNiL-Chau/byteflow/issues"
   },
   "funding": {
     "type": "github",

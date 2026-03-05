@@ -13,10 +13,9 @@ export { use, type StreamPlugin, type StreamContext } from './core/plugin.js';
   Instead of default exporting an object, we follow standard ESM library design.
   Consumers can use:
   
-  import * as Stream from 'stream-flow';
+  import * as Stream from 'byteflow';
   
   Or:
   
-  import { push, pull } from 'stream-flow';
+  import { push, pull } from 'byteflow';
 */
-

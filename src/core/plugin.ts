@@ -27,7 +27,7 @@ const defaultContext: StreamContext = {
 };
 
 /**
- * Registers and applies a Streamflow plugin.
+ * Registers and applies a Byteflow plugin.
  *
  * @param plugin The plugin object conforming to StreamPlugin
  * @param options Optional configuration for the plugin

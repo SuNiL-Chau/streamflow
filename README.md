@@ -1,8 +1,8 @@
-# Stream-flow
+# byteflow
 
 > A cross-runtime JavaScript streaming engine — ergonomic, performant, and `AsyncIterable`-first.
 
-Stream-flow is an enterprise-grade streaming library for Node.js, Browsers, Deno, and Cloudflare Workers. It replaces the complexity of WHATWG `ReadableStream` and Node.js streams with a simple, unified `AsyncIterable<Uint8Array[]>` interface, backed by an O(1) linked-list queue for deterministic memory and throughput.
+byteflow is an enterprise-grade streaming library for Node.js, Browsers, Deno, and Cloudflare Workers. It replaces the complexity of WHATWG `ReadableStream` and Node.js streams with a simple, unified `AsyncIterable<Uint8Array[]>` interface, backed by an O(1) linked-list queue for deterministic memory and throughput.
 
 **Source of idiation - [Cloudflare Blog Better Stream API](https://blog.cloudflare.com/a-better-web-streams-api/)**
 
@@ -10,7 +10,7 @@ Stream-flow is an enterprise-grade streaming library for Node.js, Browsers, Deno
 
 Benchmarked against the native Web Streams API on 1KB chunks:
 
-| Payload  | Stream-flow  | Web Streams  | Speedup    |
+| Payload  | byteflow  | Web Streams  | Speedup    |
 |----------|-------------|--------------|------------|
 | 1 MB     | 2.21ms      | 13.20ms      | **~5.98x** |
 | 100 MB   | 49.65ms     | 264.48ms     | **~5.33x** |
@@ -22,7 +22,7 @@ Benchmarked against the native Web Streams API on 1KB chunks:
 ## Installation
 
 ```bash
-npm install stream-flow
+npm install byteflow
 ```
 
 ---
@@ -30,15 +30,15 @@ npm install stream-flow
 ## Quick Start
 
 ```ts
-import { push, text } from 'stream-flow';
+import { push, text } from 'byteflow';
 
 const { writer, readable } = push();
 
 writer.write('Hello, ');
-writer.write('Stream-flow!');
+writer.write('byteflow!');
 writer.end();
 
-console.log(await text(readable)); // "Hello, Stream-flow!"
+console.log(await text(readable)); // "Hello, byteflow!"
 ```
 
 ---
@@ -50,7 +50,7 @@ console.log(await text(readable)); // "Hello, Stream-flow!"
 Creates a writable/readable stream pair. The `writer` side accepts data; the `readable` side is an `AsyncIterable<Uint8Array[]>`.
 
 ```ts
-import { push } from 'stream-flow';
+import { push } from 'byteflow';
 
 const { writer, readable } = push({
   highWaterMark: 1024, // max buffered chunks (default: 16384)
@@ -101,7 +101,7 @@ const { writer } = push({ highWaterMark: 2, backpressure: 'drop-newest' });
 #### Aborting a Stream
 
 ```ts
-import { push } from 'stream-flow';
+import { push } from 'byteflow';
 
 const { writer, readable } = push();
 
@@ -122,7 +122,7 @@ try {
 Applies one or more async transform functions to a stream. Each transform receives a `Uint8Array` chunk and returns a `Uint8Array[]` (one chunk can become zero, one, or many output chunks).
 
 ```ts
-import { push, pull, text } from 'stream-flow';
+import { push, pull, text } from 'byteflow';
 
 const { writer, readable } = push();
 
@@ -141,7 +141,7 @@ console.log(await text(uppercased)); // "HELLO WORLD"
 #### Chaining Multiple Transforms
 
 ```ts
-import { push, pull, text } from 'stream-flow';
+import { push, pull, text } from 'byteflow';
 
 const { writer, readable } = push();
 writer.write('  hello world  ');
@@ -163,7 +163,7 @@ console.log(await text(processed)); // "dlrow olleh"
 A transform can return `[]` to drop a chunk entirely:
 
 ```ts
-import { push, pull, text } from 'stream-flow';
+import { push, pull, text } from 'byteflow';
 
 const { writer, readable } = push();
 writer.write('keep this');
@@ -185,7 +185,7 @@ console.log(await text(filtered)); // "keep this"
 A fully synchronous version of `pull` for use with synchronous in-memory data sources. Avoids promise/microtask overhead entirely.
 
 ```ts
-import { pullSync } from 'stream-flow';
+import { pullSync } from 'byteflow';
 
 function* generateChunks() {
   yield [new TextEncoder().encode('chunk1')];
@@ -211,7 +211,7 @@ for (const batch of result) {
 Broadcasts a single source stream to **multiple independent consumers**. Each consumer gets its own backpressure-controlled queue.
 
 ```ts
-import { push, share, text } from 'stream-flow';
+import { push, share, text } from 'byteflow';
 
 const { writer, readable } = push();
 
@@ -235,7 +235,7 @@ console.log(result2); // "shared data"
 #### Multi-consumer with Different Transforms
 
 ```ts
-import { push, share, text } from 'stream-flow';
+import { push, share, text } from 'byteflow';
 
 const { writer, readable } = push();
 writer.write('hello');
@@ -259,7 +259,7 @@ console.log(await text(lower)); // "hello"
 Collects all chunks from a stream and decodes them as a UTF-8 string.
 
 ```ts
-import { push, text } from 'stream-flow';
+import { push, text } from 'byteflow';
 
 const { writer, readable } = push();
 writer.write('Hello ');
@@ -274,7 +274,7 @@ console.log(await text(readable)); // "Hello World"
 Collects all chunks and returns a single concatenated `Uint8Array`.
 
 ```ts
-import { push, bytes } from 'stream-flow';
+import { push, bytes } from 'byteflow';
 
 const { writer, readable } = push();
 writer.write(new Uint8Array([1, 2, 3]));
@@ -290,14 +290,14 @@ console.log(result); // Uint8Array [1, 2, 3, 4, 5, 6]
 Collects all chunks, decodes as UTF-8, and parses as JSON.
 
 ```ts
-import { push, json } from 'stream-flow';
+import { push, json } from 'byteflow';
 
 const { writer, readable } = push();
-writer.write('{"name":"Stream-flow","fast":true}');
+writer.write('{"name":"byteflow","fast":true}');
 writer.end();
 
 const data = await json<{ name: string; fast: boolean }>(readable);
-console.log(data.name); // "Stream-flow"
+console.log(data.name); // "byteflow"
 console.log(data.fast); // true
 ```
 
@@ -305,12 +305,12 @@ console.log(data.fast); // true
 
 ## Adapters
 
-### Web Streams → Stream-flow: `fromWeb(webStream)`
+### Web Streams → byteflow: `fromWeb(webStream)`
 
-Convert a WHATWG `ReadableStream` into a Stream-flow `ReadableBatchStream`.
+Convert a WHATWG `ReadableStream` into a byteflow `ReadableBatchStream`.
 
 ```ts
-import { fromWeb, text } from 'stream-flow';
+import { fromWeb, text } from 'byteflow';
 
 const response = await fetch('https://example.com/data.txt');
 const stream = fromWeb(response.body!);
@@ -318,29 +318,29 @@ const stream = fromWeb(response.body!);
 console.log(await text(stream));
 ```
 
-### Stream-flow → Web Streams: `toWeb(source)`
+### byteflow → Web Streams: `toWeb(source)`
 
-Convert a Stream-flow stream back to a WHATWG `ReadableStream` (e.g. to pass to `new Response()`).
+Convert a byteflow stream back to a WHATWG `ReadableStream` (e.g. to pass to `new Response()`).
 
 ```ts
-import { push, toWeb } from 'stream-flow';
+import { push, toWeb } from 'byteflow';
 
 const { writer, readable } = push();
-writer.write('hello from stream-flow');
+writer.write('hello from byteflow');
 writer.end();
 
 const webStream = toWeb(readable);
 const response = new Response(webStream);
-console.log(await response.text()); // "hello from stream-flow"
+console.log(await response.text()); // "hello from byteflow"
 ```
 
-### Node.js Readable → Stream-flow: `fromNode(nodeStream)`
+### Node.js Readable → byteflow: `fromNode(nodeStream)`
 
-Convert a Node.js `Readable` stream into a Stream-flow stream.
+Convert a Node.js `Readable` stream into a byteflow stream.
 
 ```ts
 import { createReadStream } from 'node:fs';
-import { fromNode, text } from 'stream-flow';
+import { fromNode, text } from 'byteflow';
 
 const nodeStream = createReadStream('./README.md');
 const stream = fromNode(nodeStream);
@@ -348,13 +348,13 @@ const stream = fromNode(nodeStream);
 console.log(await text(stream));
 ```
 
-### Stream-flow → Node.js Readable: `toNode(source)`
+### byteflow → Node.js Readable: `toNode(source)`
 
-Convert a Stream-flow stream back to a Node.js `Readable`.
+Convert a byteflow stream back to a Node.js `Readable`.
 
 ```ts
 import { createWriteStream } from 'node:fs';
-import { push, toNode } from 'stream-flow';
+import { push, toNode } from 'byteflow';
 
 const { writer, readable } = push();
 writer.write('writing to file via node stream');
@@ -370,15 +370,15 @@ nodeReadable.pipe(createWriteStream('./output.txt'));
 
 ### `use(plugin, options?)`
 
-The enterprise-grade plugin system lets you extend Stream-flow's capabilities by registering plugins that wrap or augment the core `push`, `pull`, and `share` operations.
+The enterprise-grade plugin system lets you extend byteflow's capabilities by registering plugins that wrap or augment the core `push`, `pull`, and `share` operations.
 
 **Defining a plugin:**
 
 ```ts
-import { use, type StreamPlugin } from 'stream-flow';
+import { use, type StreamPlugin } from 'byteflow';
 
 // A plugin that logs each time push() is called
-const loggerPlugin: StreamPlugin<{ prefix: string }, { push: typeof import('stream-flow').push }> = {
+const loggerPlugin: StreamPlugin<{ prefix: string }, { push: typeof import('byteflow').push }> = {
   name: 'logger',
   version: '1.0.0',
   apply(ctx, options) {
@@ -402,10 +402,10 @@ writer.end();
 **Building a metrics plugin:**
 
 ```ts
-import { use, text, type StreamPlugin } from 'stream-flow';
+import { use, text, type StreamPlugin } from 'byteflow';
 
 interface MetricsResult {
-  push: typeof import('stream-flow').push;
+  push: typeof import('byteflow').push;
   getMetrics: () => { streams: number };
 }
 
@@ -438,10 +438,10 @@ console.log(getMetrics()); // { streams: 1 }
 
 ## Error Handling
 
-Stream-flow exports named error classes so you can handle failures precisely.
+byteflow exports named error classes so you can handle failures precisely.
 
 ```ts
-import { push, StreamBackpressureError, StreamAbortError } from 'stream-flow';
+import { push, StreamBackpressureError, StreamAbortError } from 'byteflow';
 
 const { writer, readable } = push({ highWaterMark: 1, backpressure: 'strict' });
 
@@ -457,7 +457,7 @@ try {
 
 | Error Class               | When it's thrown                                          |
 |---------------------------|-----------------------------------------------------------|
-| `StreamError`             | Base class for all Stream-flow errors                      |
+| `StreamError`             | Base class for all byteflow errors                      |
 | `StreamBackpressureError` | `strict` backpressure limit exceeded                      |
 | `StreamClosedError`       | Writing to a closed stream                                |
 | `StreamAbortError`        | Stream was aborted (default reason if none given)         |
@@ -466,7 +466,7 @@ try {
 
 ## TypeScript
 
-Stream-flow is written in TypeScript and ships full `.d.ts` types.
+byteflow is written in TypeScript and ships full `.d.ts` types.
 
 ```ts
 import type {
@@ -477,7 +477,7 @@ import type {
   BackpressureStrategy,  // 'strict' | 'block' | 'drop-oldest' | 'drop-newest'
   StreamPlugin,          // Plugin interface
   StreamContext,         // Context passed to plugins
-} from 'stream-flow';
+} from 'byteflow';
 ```
 
 ---
@@ -486,7 +486,7 @@ import type {
 
 ```ts
 import { createReadStream } from 'node:fs';
-import { fromNode, pull, share, text, bytes } from 'stream-flow';
+import { fromNode, pull, share, text, bytes } from 'byteflow';
 
 // 1. Source: Node.js file stream
 const fileStream = fromNode(createReadStream('./data.bin'));
@@ -534,4 +534,5 @@ npm run test     # Run all unit & integration tests
 npm run lint     # Check with Biome
 npm run format   # Auto-format with Biome
 ```
+
 

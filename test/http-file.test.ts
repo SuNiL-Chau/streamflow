@@ -15,8 +15,8 @@ describe('Integration Tests: File and HTTP Streaming', () => {
   let outFilePath: string;
 
   before(async () => {
-    tempFilePath = join(tmpdir(), 'stream-flow-test-in.txt');
-    outFilePath = join(tmpdir(), 'stream-flow-test-out.txt');
+    tempFilePath = join(tmpdir(), 'byteflow-test-in.txt');
+    outFilePath = join(tmpdir(), 'byteflow-test-out.txt');
     writeFileSync(tempFilePath, TEST_PAYLOAD);
 
     server = createServer((req, res) => {
