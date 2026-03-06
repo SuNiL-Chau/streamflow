@@ -1,14 +1,17 @@
 # byteflow
 
-[![npm](https://img.shields.io/npm/v/byteflow)](https://www.npmjs.com/package/byteflow)
-[![license](https://img.shields.io/npm/l/byteflow)](https://github.com/SuNiL-Chau/byteflow/blob/main/LICENSE)
-[![node](https://img.shields.io/node/v/byteflow)](https://www.npmjs.com/package/byteflow)
-
 > A cross-runtime JavaScript streaming engine — ergonomic, performant, and `AsyncIterable`-first.
 
 byteflow is an enterprise-grade streaming library for Node.js, Browsers, Deno, and Cloudflare Workers. It replaces the complexity of WHATWG `ReadableStream` and Node.js streams with a simple, unified `AsyncIterable<Uint8Array[]>` interface, backed by an O(1) linked-list queue for deterministic memory and throughput.
 
 **Source of idiation - [Cloudflare Blog Better Stream API](https://blog.cloudflare.com/a-better-web-streams-api/)**
+
+
+[![npm](https://img.shields.io/npm/v/byteflow)](https://www.npmjs.com/package/byteflow)
+[![license](https://img.shields.io/npm/l/byteflow)](https://github.com/SuNiL-Chau/byteflow/blob/main/LICENSE)
+[![node](https://img.shields.io/node/v/byteflow)](https://www.npmjs.com/package/byteflow)
+[![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=SuNiL-Chau_byteflow&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=SuNiL-Chau_byteflow)
+[![SonarQube Cloud](https://sonarcloud.io/images/project_badges/sonarcloud-light.svg)](https://sonarcloud.io/summary/new_code?id=SuNiL-Chau_byteflow)
 
 ## Benchmarks
 
