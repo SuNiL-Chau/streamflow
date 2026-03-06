@@ -48,7 +48,7 @@ class PushStreamController implements Writer {
           const waiter = this.pullQueue.dequeue();
           waiter?.resolve({ value: undefined, done: true });
         }
-      } else if (this.abortReason !== null) {
+      } else if (this.abortReason) {
         while (this.pullQueue.length > 0) {
           const waiter = this.pullQueue.dequeue();
           waiter?.reject(this.toError(this.abortReason));
@@ -138,7 +138,7 @@ class PushStreamController implements Writer {
             this.resolveBlockedWriters(); // buffer drained
           } else if (this.isEnded) {
             resolve({ value: undefined, done: true });
-          } else if (this.abortReason !== null) {
+          } else if (this.abortReason) {
             reject(this.toError(this.abortReason));
           } else {
             // Wait for data

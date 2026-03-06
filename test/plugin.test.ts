@@ -1,13 +1,6 @@
 import assert from 'node:assert';
 import test from 'node:test';
-import {
-  type StreamContext,
-  type StreamPlugin,
-  pull,
-  type push,
-  text,
-  use,
-} from '../dist/index.esm.js';
+import { type StreamContext, type StreamPlugin, type push, text, use } from '../dist/index.esm.js';
 
 test('Plugin Architecture - use() injects correctly', async () => {
   // Define a simple plugin that adds a 'log' wrapper over context

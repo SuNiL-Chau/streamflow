@@ -1,6 +1,6 @@
 import * as assert from 'node:assert';
 import { describe, it } from 'node:test';
-import { pull, push, share, text } from '../dist/index.esm.js';
+import { push, share, text } from '../dist/index.esm.js';
 
 describe('Integration Tests', () => {
   it('Stream.share multi-consumer pipeline', async () => {

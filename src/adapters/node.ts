@@ -11,7 +11,7 @@ export async function* fromNode(stream: NodeJS.ReadableStream): ReadableBatchStr
     } else if (typeof chunk === 'string') {
       yield [new TextEncoder().encode(chunk)];
     } else {
-      throw new Error(`Unsupported chunk type in fromNode: ${typeof chunk}`);
+      throw new TypeError(`Unsupported chunk type in fromNode: ${typeof chunk}`);
     }
   }
 }
