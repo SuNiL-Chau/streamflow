@@ -69,4 +69,4 @@ async function runPerformanceTuning() {
   );
 }
 
-runPerformanceTuning().catch(console.error);
+await runPerformanceTuning();

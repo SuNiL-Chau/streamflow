@@ -3,14 +3,14 @@ import type { BackpressureStrategy, PushOptions, PushResult, Writer } from '../t
 import { Queue } from './queue.js';
 
 class PushStreamController implements Writer {
-  private buffer: Queue<Uint8Array> = new Queue<Uint8Array>();
-  private highWaterMark: number;
-  private strategy: BackpressureStrategy;
+  private readonly buffer: Queue<Uint8Array> = new Queue<Uint8Array>();
+  private readonly highWaterMark: number;
+  private readonly strategy: BackpressureStrategy;
 
   private isEnded = false;
   private abortReason: unknown = null;
 
-  private pullQueue: Queue<{
+  private readonly pullQueue: Queue<{
     resolve: (value: IteratorResult<Uint8Array[]>) => void;
     reject: (reason: unknown) => void;
   }> = new Queue<{
@@ -19,7 +19,9 @@ class PushStreamController implements Writer {
   }>();
 
   // To handle the 'block' backpressure strategy
-  private writeQueue: Queue<{ resolve: () => void }> = new Queue<{ resolve: () => void }>();
+  private readonly writeQueue: Queue<{ resolve: () => void }> = new Queue<{
+    resolve: () => void;
+  }>();
 
   constructor(options: PushOptions = {}) {
     this.highWaterMark = options.highWaterMark ?? 1024 * 16; // arbitrary chunks default
@@ -28,6 +30,10 @@ class PushStreamController implements Writer {
 
   private encodeString(str: string): Uint8Array {
     return new TextEncoder().encode(str);
+  }
+
+  private toError(reason: unknown): Error {
+    return reason instanceof Error ? reason : new StreamAbortError(String(reason));
   }
 
   private processWaiters() {
@@ -45,7 +51,7 @@ class PushStreamController implements Writer {
       } else if (this.abortReason !== null) {
         while (this.pullQueue.length > 0) {
           const waiter = this.pullQueue.dequeue();
-          waiter?.reject(this.abortReason);
+          waiter?.reject(this.toError(this.abortReason));
         }
       }
     }
@@ -133,7 +139,7 @@ class PushStreamController implements Writer {
           } else if (this.isEnded) {
             resolve({ value: undefined, done: true });
           } else if (this.abortReason !== null) {
-            reject(this.abortReason);
+            reject(this.toError(this.abortReason));
           } else {
             // Wait for data
             this.pullQueue.enqueue({ resolve, reject });

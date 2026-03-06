@@ -24,7 +24,9 @@ export function share(source: ReadableBatchStream, options?: PushOptions): Share
 
         // Write to all consumers.
         // Wait for all to handle backpressure.
-        await Promise.all(consumers.map((c) => c.writer.writev(batch)));
+        // writev() returns void | Promise<void> — Promise.resolve() normalises both to a real Promise
+        // so Promise.all() always receives an iterable of Thenables.
+        await Promise.all(consumers.map((c) => Promise.resolve(c.writer.writev(batch))));
       }
 
       // End all consumers

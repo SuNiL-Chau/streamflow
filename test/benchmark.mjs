@@ -79,4 +79,4 @@ async function runBenchmark() {
   await runTest(10000); // 10000MB Test (10GB)
 }
 
-runBenchmark().catch(console.error);
+await runBenchmark();
