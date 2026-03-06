@@ -1,6 +1,14 @@
-import { StreamAbortError, StreamBackpressureError } from '../errors.js';
+import {
+  StreamAbortError,
+  StreamBackpressureError,
+  StreamCancelledError,
+  StreamClosedError,
+} from '../errors.js';
 import type { BackpressureStrategy, PushOptions, PushResult, Writer } from '../types.js';
 import { Queue } from './queue.js';
+
+// I1: Module-level singleton — avoid per-write allocation
+const encoder = new TextEncoder();
 
 class PushStreamController implements Writer {
   private readonly buffer: Queue<Uint8Array> = new Queue<Uint8Array>();
@@ -24,12 +32,27 @@ class PushStreamController implements Writer {
   }>();
 
   constructor(options: PushOptions = {}) {
-    this.highWaterMark = options.highWaterMark ?? 1024 * 16; // arbitrary chunks default
+    this.highWaterMark = options.highWaterMark ?? 1024 * 16;
     this.strategy = options.backpressure ?? 'strict';
+
+    // F6: AbortSignal integration
+    if (options.signal) {
+      const signal = options.signal;
+      if (signal.aborted) {
+        this.abortReason = new StreamCancelledError(signal.reason);
+      } else {
+        const onAbort = () => {
+          this.abort(new StreamCancelledError(signal.reason));
+        };
+        signal.addEventListener('abort', onAbort, { once: true });
+      }
+    }
   }
 
-  private encodeString(str: string): Uint8Array {
-    return new TextEncoder().encode(str);
+  // F7: desiredSize getter — how much buffer space is left
+  get desiredSize(): number | null {
+    if (this.isEnded || this.abortReason) return null;
+    return this.highWaterMark - this.buffer.length;
   }
 
   private toError(reason: unknown): Error {
@@ -68,7 +91,11 @@ class PushStreamController implements Writer {
     if (this.buffer.length >= this.highWaterMark) {
       switch (this.strategy) {
         case 'strict':
-          throw new StreamBackpressureError();
+          throw new StreamBackpressureError({
+            hwm: this.highWaterMark,
+            current: this.buffer.length,
+            strategy: this.strategy,
+          });
         case 'drop-oldest':
           this.buffer.dequeue(); // Drop the oldest chunk
           break;
@@ -84,9 +111,11 @@ class PushStreamController implements Writer {
   }
 
   async write(chunk: Uint8Array | string): Promise<void> {
-    if (this.isEnded || this.abortReason) return;
+    // I6: Throw on write-after-end
+    if (this.isEnded) throw new StreamClosedError();
+    if (this.abortReason) return;
 
-    const data = typeof chunk === 'string' ? this.encodeString(chunk) : chunk;
+    const data = typeof chunk === 'string' ? encoder.encode(chunk) : chunk;
 
     if (this.buffer.length >= this.highWaterMark && this.strategy === 'drop-newest') {
       return; // Drop newest (the incoming chunk) by doing nothing
@@ -95,22 +124,52 @@ class PushStreamController implements Writer {
     const wait = this.applyBackpressure();
     if (wait) await wait;
 
-    if (this.isEnded || this.abortReason) return; // double check after async wait
+    if (this.isEnded) throw new StreamClosedError();
+    if (this.abortReason) return; // double check after async wait
 
     this.buffer.enqueue(data);
     this.processWaiters();
   }
 
+  // I2 + F8: Atomic writev — enqueue all chunks in one pass before notifying waiters
   async writev(chunks: Uint8Array[]): Promise<void> {
-    if (this.isEnded || this.abortReason) return;
+    if (this.isEnded) throw new StreamClosedError();
+    if (this.abortReason) return;
+    if (chunks.length === 0) return;
 
-    // Simplistic batch write depending on strategy.
-    for (const chunk of chunks) {
-      await this.write(chunk);
+    // Handle 'block' backpressure: wait until there's space for at least one chunk
+    if (this.strategy === 'block' && this.buffer.length >= this.highWaterMark) {
+      await new Promise<void>((resolve) => {
+        this.writeQueue.enqueue({ resolve });
+      });
+      if (this.isEnded) throw new StreamClosedError();
+      if (this.abortReason) return;
     }
+
+    // Enqueue all chunks atomically, applying drop strategies inline
+    for (const chunk of chunks) {
+      if (this.strategy === 'drop-newest' && this.buffer.length >= this.highWaterMark) {
+        break; // Drop all remaining incoming chunks
+      }
+      if (this.strategy === 'drop-oldest' && this.buffer.length >= this.highWaterMark) {
+        this.buffer.dequeue(); // Make room
+      }
+      if (this.strategy === 'strict' && this.buffer.length >= this.highWaterMark) {
+        throw new StreamBackpressureError({
+          hwm: this.highWaterMark,
+          current: this.buffer.length,
+          strategy: this.strategy,
+        });
+      }
+      this.buffer.enqueue(chunk);
+    }
+
+    // Notify waiters once after all chunks are enqueued
+    this.processWaiters();
   }
 
   end(): void {
+    if (this.isEnded) return;
     this.isEnded = true;
     this.processWaiters();
   }
@@ -122,7 +181,7 @@ class PushStreamController implements Writer {
     // Reject blocked writers
     while (this.writeQueue.length > 0) {
       const writer = this.writeQueue.dequeue();
-      // Unblock them, perhaps they'll error on completion/next check.
+      // Unblock them so they can re-check state and reject
       writer?.resolve();
     }
   }

@@ -8,13 +8,20 @@ var StreamError = class extends Error {
   }
 };
 var StreamBackpressureError = class extends StreamError {
-  constructor(message = "Buffer full") {
-    super(message);
+  hwm;
+  current;
+  strategy;
+  constructor(context) {
+    const msg = context ? `Backpressure limit exceeded: buffer has ${context.current}/${context.hwm} chunks (strategy: '${context.strategy}')` : "Backpressure limit exceeded";
+    super(msg);
     this.name = "StreamBackpressureError";
+    this.hwm = context?.hwm ?? 0;
+    this.current = context?.current ?? 0;
+    this.strategy = context?.strategy ?? "strict";
   }
 };
 var StreamClosedError = class extends StreamError {
-  constructor(message = "Stream is closed") {
+  constructor(message = "Cannot write to a closed stream") {
     super(message);
     this.name = "StreamClosedError";
   }
@@ -23,6 +30,15 @@ var StreamAbortError = class extends StreamError {
   constructor(message = "Stream was aborted") {
     super(message);
     this.name = "StreamAbortError";
+  }
+};
+var StreamCancelledError = class extends StreamError {
+  reason;
+  constructor(reason) {
+    const msg = reason instanceof Error ? `Stream cancelled: ${reason.message}` : reason != null ? `Stream cancelled: ${String(reason)}` : "Stream was cancelled via AbortSignal";
+    super(msg);
+    this.name = "StreamCancelledError";
+    this.reason = reason;
   }
 };
 
@@ -119,6 +135,7 @@ var Queue = class {
 };
 
 // src/core/push.ts
+var encoder = new TextEncoder();
 var PushStreamController = class {
   buffer = new Queue();
   highWaterMark;
@@ -131,9 +148,22 @@ var PushStreamController = class {
   constructor(options = {}) {
     this.highWaterMark = options.highWaterMark ?? 1024 * 16;
     this.strategy = options.backpressure ?? "strict";
+    if (options.signal) {
+      const signal = options.signal;
+      if (signal.aborted) {
+        this.abortReason = new StreamCancelledError(signal.reason);
+      } else {
+        const onAbort = () => {
+          this.abort(new StreamCancelledError(signal.reason));
+        };
+        signal.addEventListener("abort", onAbort, { once: true });
+      }
+    }
   }
-  encodeString(str) {
-    return new TextEncoder().encode(str);
+  // F7: desiredSize getter — how much buffer space is left
+  get desiredSize() {
+    if (this.isEnded || this.abortReason) return null;
+    return this.highWaterMark - this.buffer.length;
   }
   toError(reason) {
     return reason instanceof Error ? reason : new StreamAbortError(String(reason));
@@ -168,7 +198,11 @@ var PushStreamController = class {
     if (this.buffer.length >= this.highWaterMark) {
       switch (this.strategy) {
         case "strict":
-          throw new StreamBackpressureError();
+          throw new StreamBackpressureError({
+            hwm: this.highWaterMark,
+            current: this.buffer.length,
+            strategy: this.strategy
+          });
         case "drop-oldest":
           this.buffer.dequeue();
           break;
@@ -183,24 +217,51 @@ var PushStreamController = class {
     }
   }
   async write(chunk) {
-    if (this.isEnded || this.abortReason) return;
-    const data = typeof chunk === "string" ? this.encodeString(chunk) : chunk;
+    if (this.isEnded) throw new StreamClosedError();
+    if (this.abortReason) return;
+    const data = typeof chunk === "string" ? encoder.encode(chunk) : chunk;
     if (this.buffer.length >= this.highWaterMark && this.strategy === "drop-newest") {
       return;
     }
     const wait = this.applyBackpressure();
     if (wait) await wait;
-    if (this.isEnded || this.abortReason) return;
+    if (this.isEnded) throw new StreamClosedError();
+    if (this.abortReason) return;
     this.buffer.enqueue(data);
     this.processWaiters();
   }
+  // I2 + F8: Atomic writev — enqueue all chunks in one pass before notifying waiters
   async writev(chunks) {
-    if (this.isEnded || this.abortReason) return;
-    for (const chunk of chunks) {
-      await this.write(chunk);
+    if (this.isEnded) throw new StreamClosedError();
+    if (this.abortReason) return;
+    if (chunks.length === 0) return;
+    if (this.strategy === "block" && this.buffer.length >= this.highWaterMark) {
+      await new Promise((resolve) => {
+        this.writeQueue.enqueue({ resolve });
+      });
+      if (this.isEnded) throw new StreamClosedError();
+      if (this.abortReason) return;
     }
+    for (const chunk of chunks) {
+      if (this.strategy === "drop-newest" && this.buffer.length >= this.highWaterMark) {
+        break;
+      }
+      if (this.strategy === "drop-oldest" && this.buffer.length >= this.highWaterMark) {
+        this.buffer.dequeue();
+      }
+      if (this.strategy === "strict" && this.buffer.length >= this.highWaterMark) {
+        throw new StreamBackpressureError({
+          hwm: this.highWaterMark,
+          current: this.buffer.length,
+          strategy: this.strategy
+        });
+      }
+      this.buffer.enqueue(chunk);
+    }
+    this.processWaiters();
   }
   end() {
+    if (this.isEnded) return;
     this.isEnded = true;
     this.processWaiters();
   }
@@ -243,22 +304,66 @@ function push(options) {
 }
 
 // src/core/pull.ts
-async function* pull(source, ...transforms) {
-  for await (const batch of source) {
-    let currentBatch = batch;
-    for (const transform of transforms) {
+function isStatefulTransform(t) {
+  return typeof t === "object" && t !== null && typeof t.transform === "function";
+}
+function applyFunctionTransform(upstream, fn, signal) {
+  return (async function* () {
+    for await (const batch of upstream) {
+      if (signal?.aborted) throw new StreamCancelledError(signal.reason);
       const nextBatch = [];
-      for (const chunk of currentBatch) {
-        const result = await transform(chunk);
+      for (const chunk of batch) {
+        const result = await fn(chunk);
         nextBatch.push(...result);
       }
-      currentBatch = nextBatch;
-      if (currentBatch.length === 0) break;
+      if (nextBatch.length > 0) yield nextBatch;
     }
-    if (currentBatch.length > 0) {
-      yield currentBatch;
+  })();
+}
+function applyStatefulTransform(upstream, t) {
+  return (async function* () {
+    try {
+      yield* t.transform(upstream);
+    } catch (err) {
+      t.abort?.(err);
+      throw err;
     }
+  })();
+}
+function pull(source, ...args) {
+  let signal;
+  let transforms;
+  const last = args[args.length - 1];
+  if (args.length > 0 && last !== null && typeof last === "object" && !isStatefulTransform(last) && typeof last !== "function" && "signal" in last) {
+    signal = last.signal;
+    transforms = args.slice(0, -1);
+  } else {
+    transforms = args;
   }
+  return (async function* () {
+    if (signal?.aborted) {
+      throw new StreamCancelledError(signal.reason);
+    }
+    if (transforms.length === 0) {
+      for await (const batch of source) {
+        if (signal?.aborted) throw new StreamCancelledError(signal.reason);
+        yield batch;
+      }
+      return;
+    }
+    let current = source;
+    for (const transform of transforms) {
+      if (isStatefulTransform(transform)) {
+        current = applyStatefulTransform(current, transform);
+      } else {
+        current = applyFunctionTransform(current, transform, signal);
+      }
+    }
+    for await (const batch of current) {
+      if (signal?.aborted) throw new StreamCancelledError(signal.reason);
+      yield batch;
+    }
+  })();
 }
 function* pullSync(source, ...transforms) {
   for (const batch of source) {
@@ -342,6 +447,72 @@ async function json(source) {
   return JSON.parse(txt);
 }
 
+// src/core/sync.ts
+var decoder = new TextDecoder();
+function* fromSync(data) {
+  if (Array.isArray(data)) {
+    if (data.length > 0) yield data;
+  } else {
+    yield [data];
+  }
+}
+function bytesSync(source) {
+  const chunks = [];
+  let totalLength = 0;
+  for (const batch of source) {
+    for (const chunk of batch) {
+      chunks.push(chunk);
+      totalLength += chunk.length;
+    }
+  }
+  const result = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return result;
+}
+function textSync(source) {
+  return decoder.decode(bytesSync(source));
+}
+function jsonSync(source) {
+  return JSON.parse(textSync(source));
+}
+
+// src/core/pipeto.ts
+async function pipeTo(source, sink, options) {
+  const { signal, preventClose = false, preventAbort = false } = options ?? {};
+  if (signal?.aborted) {
+    if (!preventAbort) sink.abort(new StreamCancelledError(signal.reason));
+    throw new StreamCancelledError(signal.reason);
+  }
+  let signalError = null;
+  const onAbort = () => {
+    signalError = new StreamCancelledError(signal?.reason);
+    if (!preventAbort) sink.abort(signalError);
+  };
+  signal?.addEventListener("abort", onAbort, { once: true });
+  try {
+    for await (const batch of source) {
+      if (signalError) throw signalError;
+      await sink.writev(batch);
+      if (signalError) throw signalError;
+    }
+    if (!preventClose) {
+      sink.end();
+    }
+  } catch (err) {
+    signal?.removeEventListener("abort", onAbort);
+    if (!preventAbort && !signalError) {
+      sink.abort(err);
+    }
+    throw err;
+  } finally {
+    signal?.removeEventListener("abort", onAbort);
+  }
+}
+
 // src/adapters/web.ts
 async function* fromWeb(stream) {
   for await (const chunk of stream) {
@@ -408,6 +579,6 @@ function use(plugin, options) {
   return plugin.apply(defaultContext, options);
 }
 
-export { StreamAbortError, StreamBackpressureError, StreamClosedError, StreamError, bytes, fromNode, fromWeb, json, pull, pullSync, push, share, text, toNode, toWeb, use };
+export { StreamAbortError, StreamBackpressureError, StreamCancelledError, StreamClosedError, StreamError, bytes, bytesSync, fromNode, fromSync, fromWeb, json, jsonSync, pipeTo, pull, pullSync, push, share, text, textSync, toNode, toWeb, use };
 //# sourceMappingURL=index.esm.js.map
 //# sourceMappingURL=index.esm.js.map
